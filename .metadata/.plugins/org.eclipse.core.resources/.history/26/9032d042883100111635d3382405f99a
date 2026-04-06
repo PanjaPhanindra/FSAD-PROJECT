@@ -1,0 +1,42 @@
+package com.farmconnect.backend.service;
+
+import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import com.farmconnect.backend.model.Product;
+import com.farmconnect.backend.repository.ProductRepository;
+
+@Service
+public class ProductService {
+
+    @Autowired
+    private ProductRepository productRepo;
+
+    // ADD PRODUCT
+    public Product addProduct(Product product) {
+        return productRepo.save(product);
+    }
+
+    // GET ALL PRODUCTS (Buyer)
+    public List<Product> getAllProducts() {
+        return productRepo.findAll();
+    }
+
+    // ✅ ADD THIS (SELLER PRODUCTS)
+    public List<Product> getByFarmer(String email) {
+        return productRepo.findByFarmerEmail(email);
+    }
+
+    // GET PRODUCT BY ID
+    public Product getProduct(Long id) {
+        return productRepo.findById(id)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+    }
+
+    // DELETE PRODUCT
+    public String deleteProduct(Long id) {
+        productRepo.deleteById(id);
+        return "Product deleted";
+    }
+}

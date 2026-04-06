@@ -1,0 +1,34 @@
+package com.farmconnect.backend.service;
+
+import java.util.List;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional; // ✅ IMPORTANT
+
+import com.farmconnect.backend.model.CartItem;
+import com.farmconnect.backend.repository.CartRepository;
+
+@Service
+public class CartService {
+
+    @Autowired
+    private CartRepository cartRepo;
+
+    // ================= ADD TO CART =================
+    public CartItem addToCart(CartItem item) {
+        return cartRepo.save(item);
+    }
+
+    // ================= GET USER CART =================
+    public List<CartItem> getCart(String email) {
+        return cartRepo.findByUserEmail(email);
+    }
+
+    // ================= CLEAR CART =================
+    @Transactional   // ✅ MUST ADD THIS
+    public String clearCart(String email) {
+        cartRepo.deleteByUserEmail(email);
+        return "Cart cleared";
+    }
+}
