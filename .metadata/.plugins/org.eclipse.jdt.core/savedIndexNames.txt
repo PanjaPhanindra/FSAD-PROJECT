@@ -2,7 +2,6 @@ INDEX VERSION 1.134+/Users/panjaphanindra/Documents/2-2/FSD/FSAD PROJECT FULL/.m
 1315539894.index
 3649900154.index
 756723204.index
-1835454134.index
 833457677.index
 746963270.index
 365484325.index
