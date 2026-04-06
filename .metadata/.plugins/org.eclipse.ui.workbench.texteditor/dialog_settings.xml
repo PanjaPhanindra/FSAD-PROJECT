@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<section name="Workbench">
-	<section name="java.lang.Class">
-		<list key="findhistory">
-			<item value="String link "/>
-			<item value="String link = &quot;http://localhost:8080/auth/reset-password?token=&quot; + token;"/>
-		</list>
-	</section>
-</section>
