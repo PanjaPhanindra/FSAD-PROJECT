@@ -4,7 +4,7 @@ import { ProductContext } from "../context/ProductContext.jsx";
 import { CartContext } from "../context/CartContext.jsx";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { FiShoppingCart, FiStar, FiSearch, FiLogOut, FiFilter, FiX, FiTrendingUp, FiAlertCircle, FiCheck, FiX as FiClose } from "react-icons/fi";
+import { FiShoppingCart, FiStar, FiSearch, FiLogOut, FiFilter, FiX, FiTrendingUp, FiAlertCircle, FiCheck, FiX as FiClose, FiEdit2, FiTrash2 } from "react-icons/fi";
 
 /**
  * ============================================================================
@@ -79,6 +79,26 @@ const products = useMemo(() => {
   const [notificationType, setNotificationType] = useState("success");
   const [error, setError] = useState("");
 
+  // ✅ WISHLIST STATE
+  const [wishlist, setWishlist] = useState([]); // array of productIds
+  const [showWishlist, setShowWishlist] = useState(false);
+  const [wishlistProducts, setWishlistProducts] = useState([]);
+
+  // ✅ ADDRESS STATE
+  const [showAddressModal, setShowAddressModal] = useState(false);
+  const [savedAddresses, setSavedAddresses] = useState([]);
+  const [newAddress, setNewAddress] = useState({
+    fullName: "", mobile: "", street: "", city: "", state: "", pincode: ""
+  });
+  const [addressLoading, setAddressLoading] = useState(false);
+  const [addressMsg, setAddressMsg] = useState("");
+
+  // ✅ EDIT ADDRESS STATE
+  const [editingAddress, setEditingAddress] = useState(null); // holds the address being edited
+  const [editForm, setEditForm] = useState({
+    fullName: "", mobile: "", street: "", city: "", state: "", pincode: ""
+  });
+
   // ============================================================================
   // EFFECTS
   // ============================================================================
@@ -96,6 +116,136 @@ const products = useMemo(() => {
       return;
     }
   }, [user, navigate]);
+
+  // ✅ LOAD WISHLIST FROM BACKEND
+  useEffect(() => {
+    if (!user?.email) return;
+    fetch(`http://localhost:8080/wishlist/${user.email}`)
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setWishlistProducts(data);
+          setWishlist(data.map(p => p.id));
+        }
+      })
+      .catch(console.error);
+  }, [user?.email]);
+
+  // ✅ LOAD ADDRESSES FROM BACKEND
+  useEffect(() => {
+    if (!user?.email) return;
+    fetch(`http://localhost:8080/address/${encodeURIComponent(user.email)}`)
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setSavedAddresses(data); })
+      .catch(console.error);
+  }, [user?.email]);
+
+  async function saveAddress(e) {
+    e.preventDefault();
+    setAddressMsg("");
+    if (!newAddress.fullName || !newAddress.mobile || !newAddress.street || !newAddress.city || !newAddress.state || !newAddress.pincode) {
+      setAddressMsg("⚠️ Please fill all address fields.");
+      return;
+    }
+    setAddressLoading(true);
+    try {
+      const res = await fetch("http://localhost:8080/address/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userEmail: user.email, ...newAddress })
+      });
+      if (!res.ok) throw new Error("Failed to save address");
+      const saved = await res.json();
+      setSavedAddresses(prev => [...prev, saved]);
+      setNewAddress({ fullName: "", mobile: "", street: "", city: "", state: "", pincode: "" });
+      setAddressMsg("✅ Address saved successfully!");
+    } catch (err) {
+      setAddressMsg("❌ " + err.message);
+    } finally {
+      setAddressLoading(false);
+    }
+  }
+
+  // ✅ START EDITING AN ADDRESS
+  function startEdit(addr) {
+    setEditingAddress(addr.id);
+    setEditForm({
+      fullName: addr.fullName || "",
+      mobile:   addr.mobile   || "",
+      street:   addr.street   || "",
+      city:     addr.city     || "",
+      state:    addr.state    || "",
+      pincode:  addr.pincode  || "",
+    });
+    setAddressMsg("");
+  }
+
+  // ✅ CANCEL EDITING
+  function cancelEdit() {
+    setEditingAddress(null);
+    setAddressMsg("");
+  }
+
+  // ✅ SAVE EDITED ADDRESS
+  async function saveEditedAddress(addrId) {
+    if (!editForm.fullName || !editForm.mobile || !editForm.street || !editForm.city || !editForm.state || !editForm.pincode) {
+      setAddressMsg("⚠️ Please fill all fields.");
+      return;
+    }
+    setAddressLoading(true);
+    setAddressMsg("");
+    try {
+      const res = await fetch(`http://localhost:8080/address/update/${addrId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editForm)
+      });
+      if (!res.ok) throw new Error("Failed to update address");
+      const updated = await res.json();
+      setSavedAddresses(prev => prev.map(a => a.id === addrId ? updated : a));
+      setEditingAddress(null);
+      setAddressMsg("✅ Address updated successfully!");
+    } catch (err) {
+      setAddressMsg("❌ " + err.message);
+    } finally {
+      setAddressLoading(false);
+    }
+  }
+
+  // ✅ DELETE ADDRESS
+  async function deleteAddress(addrId) {
+    if (!window.confirm("Are you sure you want to delete this address?")) return;
+    try {
+      const res = await fetch(`http://localhost:8080/address/delete/${addrId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete address");
+      setSavedAddresses(prev => prev.filter(a => a.id !== addrId));
+      if (editingAddress === addrId) setEditingAddress(null);
+      setAddressMsg("🗑️ Address deleted.");
+    } catch (err) {
+      setAddressMsg("❌ " + err.message);
+    }
+  }
+
+  async function toggleWishlist(product) {
+    const isIn = wishlist.includes(product.id);
+    if (isIn) {
+      // REMOVE
+      await fetch(`http://localhost:8080/wishlist/remove?userEmail=${user.email}&productId=${product.id}`, { method: "DELETE" });
+      setWishlist(w => w.filter(id => id !== product.id));
+      setWishlistProducts(wp => wp.filter(p => p.id !== product.id));
+    } else {
+      // ADD
+      const res = await fetch("http://localhost:8080/wishlist/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userEmail: user.email, productId: product.id })
+      });
+      if (res.ok) {
+        setWishlist(w => [...w, product.id]);
+        setWishlistProducts(wp => [...wp, product]);
+      }
+    }
+  }
 
   /**
    * Clear notification after delay
@@ -320,6 +470,33 @@ const products = useMemo(() => {
                 title="View orders"
               >
                 📦 Orders
+              </button>
+
+              <button
+                onClick={() => setShowWishlist(true)}
+                className="bg-white/20 hover:bg-white/30 px-4 py-3 rounded-lg font-semibold transition relative"
+                title="My Wishlist"
+              >
+                ❤️ Wishlist
+                {wishlist.length > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                    {wishlist.length}
+                  </span>
+                )}
+              </button>
+
+              {/* 📍 Addresses Button */}
+              <button
+                onClick={() => { setShowAddressModal(true); setAddressMsg(""); }}
+                className="bg-white/20 hover:bg-white/30 px-4 py-3 rounded-lg font-semibold transition relative"
+                title="My Addresses"
+              >
+                📍 Addresses
+                {savedAddresses.length > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-yellow-400 text-gray-800 text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                    {savedAddresses.length}
+                  </span>
+                )}
               </button>
 
               <button
@@ -560,6 +737,14 @@ const products = useMemo(() => {
                       className="w-full h-full object-cover group-hover:scale-110 transition duration-300"
                       onError={(e) => (e.target.src = "https://via.placeholder.com/300?text=No+Image")}
                     />
+                    {/* ❤️ Wishlist Heart */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleWishlist(product); }}
+                      className="absolute top-2 left-2 w-8 h-8 flex items-center justify-center bg-white/80 rounded-full shadow-md hover:scale-110 transition text-lg"
+                      title={wishlist.includes(product.id) ? "Remove from wishlist" : "Add to wishlist"}
+                    >
+                      {wishlist.includes(product.id) ? "❤️" : "🤍"}
+                    </button>
                     <div className="absolute top-2 right-2 bg-green-500 text-white px-3 py-1 rounded-full text-xs font-bold">
                       ✓ In Stock
                     </div>
@@ -732,6 +917,217 @@ const products = useMemo(() => {
                 >
                   Cancel
                 </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ❤️ WISHLIST MODAL */}
+      <AnimatePresence>
+        {showWishlist && (
+          <motion.div
+            className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setShowWishlist(false)}
+          >
+            <motion.div
+              className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto"
+              initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-gray-800">❤️ My Wishlist ({wishlistProducts.length})</h2>
+                <button onClick={() => setShowWishlist(false)} className="text-gray-400 hover:text-red-500 text-2xl">✕</button>
+              </div>
+              {wishlistProducts.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-4xl mb-3">🤍</p>
+                  <p className="text-gray-500 text-lg">Your wishlist is empty.</p>
+                  <p className="text-gray-400 text-sm mt-1">Tap ❤️ on any product to save it here!</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {wishlistProducts.map(product => (
+                    <div key={product.id} className="flex gap-3 bg-gray-50 rounded-xl p-3 border border-gray-200">
+                      <img src={product.image || "https://via.placeholder.com/80"} alt={product.name}
+                        className="w-20 h-20 object-cover rounded-lg" />
+                      <div className="flex-1">
+                        <p className="font-bold text-gray-800 text-sm">{product.name}</p>
+                        <p className="text-xs text-gray-500 mb-1">by {product.sellerName}</p>
+                        <p className="text-indigo-600 font-bold">₹{parseFloat(product.price).toLocaleString()}</p>
+                        <div className="flex gap-2 mt-2">
+                          <button
+                            onClick={() => { setSelectedProduct(product); setQuantity(1); setShowWishlist(false); }}
+                            className="text-xs bg-indigo-600 text-white px-3 py-1 rounded-lg font-semibold hover:bg-indigo-700 transition"
+                          >
+                            Add to Cart
+                          </button>
+                          <button
+                            onClick={() => toggleWishlist(product)}
+                            className="text-xs bg-red-100 text-red-600 px-3 py-1 rounded-lg font-semibold hover:bg-red-200 transition"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}\n      </AnimatePresence>
+
+      {/* 📍 ADDRESS MODAL */}
+      <AnimatePresence>
+        {showAddressModal && (
+          <motion.div
+            className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setShowAddressModal(false)}
+          >
+            <motion.div
+              className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+              initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-2xl font-bold text-gray-800">📍 My Addresses</h2>
+                <button onClick={() => setShowAddressModal(false)} className="text-gray-400 hover:text-red-500 text-2xl">✕</button>
+              </div>
+
+              {/* Saved Addresses */}
+              {savedAddresses.length > 0 && (
+                <div className="mb-5 space-y-3">
+                  <p className="text-sm font-bold text-gray-700">Saved Addresses ({savedAddresses.length}):</p>
+                  {savedAddresses.map((addr, i) => (
+                    <div key={addr.id || i} className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 text-sm">
+                      {editingAddress === addr.id ? (
+                        /* ── INLINE EDIT FORM ── */
+                        <div>
+                          <p className="font-bold text-indigo-700 mb-3">✏️ Edit Address</p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {[
+                              { label: "Full Name *",           key: "fullName", placeholder: "Full name" },
+                              { label: "Mobile Number *",       key: "mobile",   placeholder: "10-digit phone" },
+                              { label: "Street / Area / House No *", key: "street", placeholder: "Street address", full: true },
+                              { label: "City *",    key: "city",    placeholder: "City" },
+                              { label: "State *",   key: "state",   placeholder: "State" },
+                              { label: "Pincode *", key: "pincode", placeholder: "6-digit pincode" },
+                            ].map(field => (
+                              <div key={field.key} className={field.full ? "md:col-span-2" : ""}>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">{field.label}</label>
+                                <input
+                                  type="text"
+                                  value={editForm[field.key]}
+                                  onChange={e => setEditForm(f => ({ ...f, [field.key]: e.target.value }))}
+                                  placeholder={field.placeholder}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 text-gray-800 text-sm"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex gap-2 mt-3">
+                            <button
+                              type="button"
+                              onClick={() => saveEditedAddress(addr.id)}
+                              disabled={addressLoading}
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-bold text-sm transition disabled:opacity-50 flex items-center gap-1"
+                            >
+                              <FiCheck size={14} />
+                              {addressLoading ? "Saving..." : "Save Changes"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cancelEdit}
+                              className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-lg font-bold text-sm transition"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* ── ADDRESS CARD VIEW ── */
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1">
+                            <p className="font-bold text-gray-800">{addr.fullName} | 📞 {addr.mobile}</p>
+                            <p className="text-gray-600 mt-1">{addr.street}, {addr.city}, {addr.state} - {addr.pincode}</p>
+                          </div>
+                          <div className="flex gap-1 flex-shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => startEdit(addr)}
+                              title="Edit address"
+                              className="p-2 text-indigo-600 hover:bg-indigo-100 rounded-lg transition"
+                            >
+                              <FiEdit2 size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteAddress(addr.id)}
+                              title="Delete address"
+                              className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition"
+                            >
+                              <FiTrash2 size={15} />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add New Address Form */}
+              <div className="border-t pt-5">
+                <p className="text-sm font-bold text-gray-700 mb-4">➕ Add New Address:</p>
+                <form onSubmit={saveAddress} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {[
+                    { label: "Full Name *", key: "fullName", placeholder: "Your full name" },
+                    { label: "Mobile Number *", key: "mobile", placeholder: "10-digit phone" },
+                    { label: "Street / Area / House No *", key: "street", placeholder: "Street address", full: true },
+                    { label: "City *", key: "city", placeholder: "City" },
+                    { label: "State *", key: "state", placeholder: "State" },
+                    { label: "Pincode *", key: "pincode", placeholder: "6-digit pincode" },
+                  ].map(field => (
+                    <div key={field.key} className={field.full ? "md:col-span-2" : ""}>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">{field.label}</label>
+                      <input
+                        type="text"
+                        value={newAddress[field.key]}
+                        onChange={e => setNewAddress(a => ({ ...a, [field.key]: e.target.value }))}
+                        placeholder={field.placeholder}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 text-gray-800 text-sm"
+                      />
+                    </div>
+                  ))}
+
+                  {addressMsg && (
+                    <div className={`md:col-span-2 text-sm font-semibold px-3 py-2 rounded-lg ${
+                      addressMsg.startsWith("✅") ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"
+                    }`}>
+                      {addressMsg}
+                    </div>
+                  )}
+
+                  <div className="md:col-span-2 flex gap-3">
+                    <button
+                      type="submit"
+                      disabled={addressLoading}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-2.5 rounded-lg font-bold transition disabled:opacity-50"
+                    >
+                      {addressLoading ? "Saving..." : "💾 Save Address"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddressModal(false)}
+                      className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-6 py-2.5 rounded-lg font-bold transition"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </form>
               </div>
             </motion.div>
           </motion.div>

@@ -28,6 +28,18 @@ public class CartController {
         return cartService.getCart(email);
     }
 
+    // REMOVE ITEM
+    @DeleteMapping("/remove/{itemId}")
+    public void removeItem(@PathVariable Long itemId) {
+        cartService.removeCartItem(itemId);
+    }
+
+    // UPDATE QUANTITY
+    @PutMapping("/update/{itemId}")
+    public CartItem updateQuantity(@PathVariable Long itemId, @RequestParam int quantity) {
+        return cartService.updateQuantity(itemId, quantity);
+    }
+
     // CLEAR CART
     @DeleteMapping("/{email}")
     public String clear(@PathVariable String email) {

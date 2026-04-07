@@ -72,4 +72,21 @@ public class User {
     private boolean verified = false;
     private String verificationCode;
     private String resetToken;
+
+    // Phase 2: Profile fields
+    private String avatarUrl;
+    private String status = "active";
+
+    public String getAvatarUrl() {
+        return avatarUrl;
+    }
+    public void setAvatarUrl(String avatarUrl) {
+        this.avatarUrl = avatarUrl;
+    }
+    public String getStatus() {
+        return status;
+    }
+    public void setStatus(String status) {
+        this.status = status;
+    }
 }

@@ -77,4 +77,22 @@ public class AuthController {
             "message", "Password updated successfully"
         );
     }
+
+    // ================= CHANGE PASSWORD (authenticated) =================
+    @PostMapping("/change-password")
+    public org.springframework.http.ResponseEntity<?> changePassword(@RequestBody Map<String, String> body) {
+        String email = body.get("email");
+        String oldPassword = body.get("oldPassword");
+        String newPassword = body.get("newPassword");
+        try {
+            authService.changePassword(email, oldPassword, newPassword);
+            return org.springframework.http.ResponseEntity.ok(
+                Map.of("status", "success", "message", "Password changed successfully")
+            );
+        } catch (Exception e) {
+            return org.springframework.http.ResponseEntity.badRequest().body(
+                Map.of("status", "error", "message", e.getMessage())
+            );
+        }
+    }
 }

@@ -48,11 +48,14 @@ export function ProductProvider({ children }) {
         })
       });
 
+      if (!res.ok) throw new Error("Failed to add product");
+
       const data = await res.json();
       await fetchProducts(); // refresh
       return data;
     } catch (err) {
       console.error("Error adding product", err);
+      throw err;
     }
   };
 
@@ -77,11 +80,14 @@ export function ProductProvider({ children }) {
         })
       });
 
+      if (!res.ok) throw new Error("Failed to update product");
+
       const data = await res.json();
       await fetchProducts(); // refresh
       return data;
     } catch (err) {
       console.error("Error updating product", err);
+      throw err;
     }
   };
 

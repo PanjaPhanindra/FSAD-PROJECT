@@ -69,15 +69,7 @@ export function CartProvider({ children }) {
   // ============================================================================
 
   // Shopping cart state: { items: [...], total: 0 }
-  const [cart, setCart] = useState(() => {
-    try {
-      const saved = localStorage.getItem(LS_CART);
-      return saved ? JSON.parse(saved) : { items: [], total: 0 };
-    } catch (err) {
-      console.error("Failed to load cart from localStorage:", err);
-      return { items: [], total: 0 };
-    }
-  });
+  const [cart, setCart] = useState({ items: [], total: 0 });
 
   // Order history state
   const [orders, setOrders] = useState(() => {
@@ -97,19 +89,47 @@ export function CartProvider({ children }) {
   const [error, setError] = useState(null);
 
   // ============================================================================
-  // EFFECTS - PERSISTENCE
+  // FETCH FROM DATABASE
   // ============================================================================
 
-  /**
-   * Persist cart to localStorage on change
-   */
-  useEffect(() => {
-    try {
-      localStorage.setItem(LS_CART, JSON.stringify(cart));
-    } catch (err) {
-      console.error("Failed to save cart to localStorage:", err);
+  const fetchCartFromDB = useCallback(async () => {
+    const savedUser = localStorage.getItem("fc_user");
+    if (!savedUser) {
+      setCart({ items: [], total: 0 });
+      return;
     }
-  }, [cart]);
+    try {
+      const user = JSON.parse(savedUser);
+      if (!user.email) return;
+
+      const res = await fetch(`http://localhost:8080/cart/${user.email}`);
+      const data = await res.json();
+      
+      const mappedItems = data.map(item => ({
+        id: item.productId,          // product's ID
+        cartItemId: item.id,         // DB row ID used for remove/update
+        name: item.productName,
+        price: item.price,
+        stock: item.stock,
+        sellerName: item.sellerName,
+        sellerEmail: item.sellerEmail,
+        image: item.productImage,
+        qty: item.quantity,
+        quantity: item.quantity
+      }));
+      setCart({ items: mappedItems, total: computeTotal(mappedItems) });
+    } catch (err) {
+      console.error("Failed to sync cart:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCartFromDB();
+  }, [fetchCartFromDB]);
+
+  // ============================================================================
+  // EFFECTS - PERSISTENCE
+  // ============================================================================
 
   /**
    * Persist orders to localStorage on change
@@ -173,12 +193,15 @@ export function CartProvider({ children }) {
 
   /**
    * Add product to cart with quantity
-   * Handles deduplication and quantity increment
-   * @param {Object} product - Product to add
-   * @param {number} qty - Quantity to add
-   * @returns {boolean} Success status
    */
   const addToCart = useCallback((product, qty = 1) => {
+    const savedUser = localStorage.getItem("fc_user");
+    if (!savedUser) {
+      setError("Please login to add items to cart");
+      return false;
+    }
+    const user = JSON.parse(savedUser);
+
     const validation = validateItem(product, qty);
     if (!validation.valid) {
       setError(validation.error);
@@ -186,83 +209,72 @@ export function CartProvider({ children }) {
     }
 
     setError(null);
-    setCart(prev => {
-      // Check if product already in cart
-      const existingIndex = prev.items.findIndex(i => i.id === product.id);
+    setLoading(true);
 
-      let items;
-      if (existingIndex >= 0) {
-        // Product exists: update quantity
-        items = [...prev.items];
-        items[existingIndex] = {
-          ...items[existingIndex],
-          qty: (items[existingIndex].qty || 0) + qty
-        };
-      } else {
-        // New product: add to cart
-        items = [
-          ...prev.items,
-          {
-            ...product,
-            qty,
-            cartItemId: `${product.id}-${Date.now()}` // Unique identifier
-          }
-        ];
-      }
+    // ✅ Flat payload matching new CartItem model (no nested product object)
+    const payload = {
+        userEmail: user.email,
+        productId: product.id,
+        quantity: qty
+    };
 
-      return {
-        items,
-        total: computeTotal(items)
-      };
-    });
+    fetch("http://localhost:8080/cart/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    })
+    .then(res => {
+        if (!res.ok) throw new Error("Failed to add");
+        return fetchCartFromDB();
+    })
+    .catch(err => {
+        console.error(err);
+        setError("Failed to add to cart");
+    })
+    .finally(() => setLoading(false));
 
     return true;
-  }, []);
+  }, [fetchCartFromDB]);
 
   /**
-   * Remove product from cart by ID
-   * @param {string|number} productId - Product ID to remove
+   * Remove item from cart by ID
    */
   const removeFromCart = useCallback((productId) => {
-    setCart(prev => {
-      const items = prev.items.filter(
-        i => i.id !== productId && i.cartItemId !== productId
-      );
-      return {
-        items,
-        total: computeTotal(items)
-      };
-    });
-  }, []);
+    const itemToRemove = cart.items.find(i => i.id === productId || i.cartItemId === productId);
+    if (!itemToRemove || !itemToRemove.cartItemId) return;
+
+    fetch(`http://localhost:8080/cart/remove/${itemToRemove.cartItemId}`, { method: "DELETE" })
+      .then(() => fetchCartFromDB())
+      .catch(console.error);
+  }, [cart.items, fetchCartFromDB]);
 
   /**
-   * Update quantity of item in cart
-   * @param {string|number} productId - Product ID to update
-   * @param {number} qty - New quantity
+   * Update quantity
    */
   const updateCartQty = useCallback((productId, qty) => {
     const validQty = Math.max(1, parseInt(qty) || 1);
+    const itemToUpdate = cart.items.find(i => i.id === productId || i.cartItemId === productId);
+    if (!itemToUpdate || !itemToUpdate.cartItemId) return;
 
-    setCart(prev => {
-      const items = prev.items.map(item =>
-        item.id === productId || item.cartItemId === productId
-          ? { ...item, qty: validQty }
-          : item
-      );
-      return {
-        items,
-        total: computeTotal(items)
-      };
-    });
-  }, []);
+    fetch(`http://localhost:8080/cart/update/${itemToUpdate.cartItemId}?quantity=${validQty}`, { method: "PUT" })
+      .then(() => fetchCartFromDB())
+      .catch(console.error);
+  }, [cart.items, fetchCartFromDB]);
 
   /**
    * Clear entire cart
    */
   const clearCart = useCallback(() => {
-    setCart({ items: [], total: 0 });
-    setError(null);
-  }, []);
+    const savedUser = localStorage.getItem("fc_user");
+    if (!savedUser) return;
+    const user = JSON.parse(savedUser);
+
+    if (user.email) {
+      fetch(`http://localhost:8080/cart/${user.email}`, { method: "DELETE" })
+        .then(() => fetchCartFromDB())
+        .catch(console.error);
+    }
+  }, [fetchCartFromDB]);
 
   /**
    * Get current cart items

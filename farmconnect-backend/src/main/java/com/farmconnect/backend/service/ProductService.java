@@ -14,6 +14,28 @@ public class ProductService {
     @Autowired
     private ProductRepository productRepo;
 
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
+    public void fixSchema() {
+        try {
+            jdbcTemplate.execute("ALTER TABLE product MODIFY image LONGTEXT");
+            jdbcTemplate.execute("ALTER TABLE product MODIFY description VARCHAR(1000)");
+            System.out.println("✅ Schema Auto-Fix: image & description columns fixed!");
+        } catch (Exception e) {
+            System.out.println("❌ Schema fix (image/desc): " + e.getMessage());
+        }
+        try {
+            // Drop stale 'quantity' column that doesn't belong in the Product entity
+            jdbcTemplate.execute("ALTER TABLE product DROP COLUMN quantity");
+            System.out.println("✅ Schema Auto-Fix: dropped stale 'quantity' column from product!");
+        } catch (Exception e) {
+            // Column may not exist — that's fine
+            System.out.println("ℹ️ quantity column: " + e.getMessage());
+        }
+    }
+
     // ✅ ADD PRODUCT
     public Product addProduct(Product product) {
         return productRepo.save(product);
@@ -54,6 +76,17 @@ public class ProductService {
         p.setSellerName(updatedProduct.getSellerName());
         p.setFarmerEmail(updatedProduct.getFarmerEmail());
 
+        return productRepo.save(p);
+    }
+
+    // ✅ RATE PRODUCT (running average)
+    public Product rateProduct(Long id, int rating) {
+        Product p = getProduct(id);
+        int total = p.getTotalRatings();
+        double currentAvg = p.getRating();
+        double newAvg = ((currentAvg * total) + rating) / (total + 1);
+        p.setRating(Math.round(newAvg * 10.0) / 10.0);
+        p.setTotalRatings(total + 1);
         return productRepo.save(p);
     }
 }

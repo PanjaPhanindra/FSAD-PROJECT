@@ -116,4 +116,24 @@ public class AuthService {
 
         return "Password updated successfully";
     }
+
+    // ================= CHANGE PASSWORD (authenticated) =================
+    public String changePassword(String email, String oldPassword, String newPassword) {
+
+        User user = userRepo.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
+            throw new RuntimeException("Old password is incorrect");
+        }
+
+        if (newPassword == null || newPassword.length() < 6) {
+            throw new RuntimeException("New password must be at least 6 characters");
+        }
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepo.save(user);
+
+        return "Password changed successfully";
+    }
 }

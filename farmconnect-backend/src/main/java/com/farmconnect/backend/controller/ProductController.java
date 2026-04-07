@@ -51,4 +51,10 @@ public class ProductController {
     public String delete(@PathVariable Long id) {
         return productService.deleteProduct(id);
     }
+
+    // ✅ RATE PRODUCT
+    @PostMapping("/{id}/rate")
+    public Product rate(@PathVariable Long id, @RequestParam int rating) {
+        return productService.rateProduct(id, rating);
+    }
 }

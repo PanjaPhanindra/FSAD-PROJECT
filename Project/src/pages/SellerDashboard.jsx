@@ -32,6 +32,11 @@ const { getProductsBySeller, addProduct, deleteProduct, updateProduct } = usePro
 
   const [sellerProducts, setSellerProducts] = useState([]);
 
+  // ✅ SELLER ORDERS STATE
+  const [sellerOrders, setSellerOrders] = useState([]);
+  const [showOrders, setShowOrders] = useState(false);
+  const [updatingOrderId, setUpdatingOrderId] = useState(null);
+
   // ✅ FIXED FETCH
   const loadProducts = () => {
     if (user?.email) {
@@ -43,7 +48,25 @@ const { getProductsBySeller, addProduct, deleteProduct, updateProduct } = usePro
 
   useEffect(() => {
     loadProducts();
+    loadOrders();
   }, [user]);
+
+  const loadOrders = () => {
+    if (!user?.email) return;
+    fetch(`http://localhost:8080/orders/seller/${user.email}`)
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setSellerOrders(data); })
+      .catch(console.error);
+  };
+
+  async function updateOrderStatus(orderId, newStatus) {
+    setUpdatingOrderId(orderId);
+    try {
+      const res = await fetch(`http://localhost:8080/orders/${orderId}/status?status=${newStatus}`, { method: "PUT" });
+      if (res.ok) loadOrders();
+    } catch (e) { console.error(e); }
+    setUpdatingOrderId(null);
+  }
 
   // FILTER
   const filteredProducts = sellerProducts
@@ -110,50 +133,49 @@ const searchMatch = (p.name || "").toLowerCase().includes(searchTerm.toLowerCase
   e.preventDefault();
   if (!validateForm()) return;
 
-  // ✅ EDIT MODE
-  if (editingId) {
-    await updateProduct(editingId, {
-      name: formData.name,
-      description: formData.description,
-      price: parseFloat(formData.price),
-      stock: parseInt(formData.stock),
-      category: formData.category,
-      image: formData.image,
-      sellerEmail: user?.email,
-      sellerName: user?.name
+  try {
+    // ✅ EDIT MODE
+    if (editingId) {
+      await updateProduct(editingId, {
+        name: formData.name,
+        description: formData.description,
+        price: parseFloat(formData.price),
+        stock: parseInt(formData.stock),
+        category: formData.category,
+        image: formData.image,
+        sellerEmail: user?.email,
+        sellerName: user?.name
+      });
+    } else {
+      // ✅ ADD MODE
+      await addProduct({
+        name: formData.name,
+        description: formData.description,
+        price: parseFloat(formData.price),
+        stock: parseInt(formData.stock),
+        category: formData.category,
+        image: formData.image,
+        sellerEmail: user?.email,
+        sellerName: user?.name
+      });
+    }
+
+    loadProducts();
+
+    setFormData({
+      name: "",
+      description: "",
+      price: "",
+      stock: "",
+      category: "vegetables",
+      image: null
     });
 
-    setEditingId(null);
+    setImagePreview(null);
     setShowForm(false);
-    loadProducts();
-    return;
+  } catch (err) {
+    alert("Failed to save product. If your image is very large, try a smaller one, or check server logs.");
   }
-
-  // ✅ ADD MODE
-  await addProduct({
-    name: formData.name,
-    description: formData.description,
-    price: parseFloat(formData.price),
-    stock: parseInt(formData.stock),
-    category: formData.category,
-    image: formData.image,
-    sellerEmail: user?.email,
-    sellerName: user?.name
-  });
-
-  loadProducts();
-
-  setFormData({
-    name: "",
-    description: "",
-    price: "",
-    stock: "",
-    category: "vegetables",
-    image: null
-  });
-
-  setImagePreview(null);
-  setShowForm(false);
 }
 
   // ✅ FIXED DELETE
@@ -213,6 +235,12 @@ stock: String(product.stock),
               className="bg-white/20 hover:bg-white/30 px-6 py-3 rounded-lg font-semibold transition flex items-center gap-2"
             >
               <FiLogOut size={20} /> Logout
+            </button>
+            <button
+              onClick={() => setShowOrders(v => !v)}
+              className={`px-6 py-3 rounded-lg font-semibold transition flex items-center gap-2 ${showOrders ? "bg-white text-green-700 shadow" : "bg-white/20 hover:bg-white/30"}`}
+            >
+              📦 Orders {sellerOrders.length > 0 && `(${sellerOrders.length})`}
             </button>
           </div>
 
@@ -552,6 +580,80 @@ stock: String(product.stock),
           )}
         </div>
       </div>
+
+      {/* 📦 SELLER ORDERS SECTION */}
+      {showOrders && (
+        <div className="max-w-7xl mx-auto p-6 pt-0">
+          <h2 className="text-2xl font-bold text-gray-800 mb-4">📦 Orders for Your Products ({sellerOrders.length})</h2>
+          {sellerOrders.length === 0 ? (
+            <div className="bg-white rounded-xl shadow p-10 text-center text-gray-500">No orders yet.</div>
+          ) : (
+            <div className="space-y-4">
+              {sellerOrders.map(order => {
+                const myItems = (order.items || []).filter(i => i.sellerEmail === user.email);
+                const statusColors = { placed: "bg-blue-100 text-blue-800", processing: "bg-yellow-100 text-yellow-800", shipped: "bg-purple-100 text-purple-800", delivered: "bg-green-100 text-green-800", cancelled: "bg-red-100 text-red-800" };
+                const sc = statusColors[order.status] || "bg-gray-100 text-gray-800";
+                return (
+                  <motion.div key={order.id} className="bg-white rounded-xl shadow-lg p-5 border border-gray-100"
+                    initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+                    <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+                      <div>
+                        <p className="text-xs text-gray-500">Order ID</p>
+                        <p className="font-bold text-gray-800">ORD-{order.id}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Buyer</p>
+                        <p className="font-semibold text-gray-700">{order.userEmail}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Date</p>
+                        <p className="font-semibold text-gray-700">{order.createdAt ? new Date(order.createdAt).toLocaleDateString() : '—'}</p>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full text-sm font-bold ${sc}`}>{order.status?.toUpperCase()}</span>
+                    </div>
+
+                    {/* Shipping address */}
+                    {order.shippingAddress && (
+                      <p className="text-xs text-gray-500 mb-3">
+                        📍 {order.shippingName} | {order.shippingAddress}, {order.shippingCity}, {order.shippingState} {order.shippingPincode}
+                      </p>
+                    )}
+
+                    {/* My items in this order */}
+                    <div className="mb-3 space-y-2">
+                      {myItems.map(item => (
+                        <div key={item.id} className="flex gap-3 items-center bg-gray-50 rounded-lg p-2">
+                          {item.productImage && <img src={item.productImage} className="w-12 h-12 object-cover rounded" alt={item.productName} />}
+                          <div className="flex-1">
+                            <p className="font-semibold text-gray-800 text-sm">{item.productName}</p>
+                            <p className="text-xs text-gray-500">₹{item.price} × {item.quantity} = ₹{(item.price * item.quantity).toFixed(2)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Status update */}
+                    {order.status !== "cancelled" && order.status !== "delivered" && (
+                      <div className="flex gap-2 flex-wrap">
+                        <p className="text-xs font-semibold text-gray-600 self-center">Update Status:</p>
+                        {["processing", "shipped", "delivered"].map(st => (
+                          <button key={st}
+                            disabled={updatingOrderId === order.id || order.status === st}
+                            onClick={() => updateOrderStatus(order.id, st)}
+                            className={`px-3 py-1 rounded-lg text-sm font-bold transition ${order.status === st ? "bg-green-500 text-white" : "bg-gray-200 hover:bg-green-100 text-gray-700"} disabled:opacity-50`}
+                          >
+                            {updatingOrderId === order.id ? "..." : st.charAt(0).toUpperCase() + st.slice(1)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

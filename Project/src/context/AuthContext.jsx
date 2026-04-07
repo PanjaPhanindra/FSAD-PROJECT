@@ -107,6 +107,59 @@ export function AuthProvider({ children }) {
     setAuthError("");
   }
 
+  // ✅ UPDATE PROFILE (name, avatarUrl)
+  async function updateProfile(data) {
+    try {
+      const res = await fetch("http://localhost:8080/users/update-profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: user?.email, ...data })
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || "Failed to update profile");
+      }
+      const updated = await res.json();
+      // Merge updated fields into existing user (avoids losing in-memory password)
+      setUser(prev => ({ ...prev, ...updated }));
+      return true;
+    } catch (err) {
+      console.error("Update profile error:", err);
+      return false;
+    }
+  }
+
+  // ✅ CHANGE PASSWORD — uses /auth/change-password
+  async function changePassword(oldPassword, newPassword) {
+    try {
+      const res = await fetch("http://localhost:8080/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: user?.email, oldPassword, newPassword })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "Failed to change password");
+      return { success: true, message: data.message || "Password changed!" };
+    } catch (err) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  // ✅ DELETE ACCOUNT
+  async function deleteAccount() {
+    try {
+      const res = await fetch(`http://localhost:8080/users/delete/${user?.email}`, {
+        method: "DELETE"
+      });
+      if (!res.ok) throw new Error("Failed to delete account");
+      setUser(null);
+      return true;
+    } catch (err) {
+      console.error("Delete account error:", err);
+      return false;
+    }
+  }
+
   const value = {
     user,
     authError,
@@ -114,7 +167,10 @@ export function AuthProvider({ children }) {
     login,
     logout,
     register,
-    clearAuthError
+    clearAuthError,
+    updateProfile,
+    changePassword,
+    deleteAccount
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

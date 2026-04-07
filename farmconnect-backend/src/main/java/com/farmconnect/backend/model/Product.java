@@ -12,12 +12,16 @@ public class Product {
     private Long id;
 
     private String name;
+    @Column(length = 1000)
     private String description;
     private double price;
     private int stock;
 
     private String category;
+    
+    @Column(columnDefinition = "LONGTEXT")
     private String image;
+    
     private String sellerName;
 
     // ✅ KEEP SAME (frontend already using this)

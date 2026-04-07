@@ -3,7 +3,7 @@ import { CartContext } from "../context/CartContext.jsx";
 import { AuthContext } from "../context/AuthContext.jsx";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { FiTrash2, FiArrowLeft, FiMinus, FiPlus, FiX, FiCheck, FiAlertCircle, FiTruck, FiCreditCard, FiMapPin, FiPhone, FiMail } from "react-icons/fi";
+import { FiTrash2, FiArrowLeft, FiMinus, FiPlus, FiX, FiCheck, FiAlertCircle, FiTruck, FiCreditCard, FiMapPin, FiPhone, FiMail, FiHome, FiEdit3 } from "react-icons/fi";
 
 /**
  * ============================================================================
@@ -52,6 +52,46 @@ export default function Cart() {
   const [discountPercent, setDiscountPercent] = useState(0);
   const [notification, setNotification] = useState("");
   const [notificationType, setNotificationType] = useState("success");
+
+  // ✅ SAVED ADDRESSES
+  const [savedAddresses, setSavedAddresses] = useState([]);
+  const [addressMode, setAddressMode] = useState("saved"); // "saved" | "manual"
+  const [selectedSavedAddress, setSelectedSavedAddress] = useState(null);
+
+  // ============================================================================
+  // FETCH SAVED ADDRESSES
+  // ============================================================================
+
+  useEffect(() => {
+    if (!user?.email) return;
+    fetch(`http://localhost:8080/address/${encodeURIComponent(user.email)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          setSavedAddresses(data);
+          setAddressMode("saved"); // default to saved if addresses exist
+        } else {
+          setAddressMode("manual"); // no saved addresses → direct to manual
+        }
+      })
+      .catch(() => setAddressMode("manual"));
+  }, [user?.email]);
+
+  // When a saved address is selected, auto-fill shipping form
+  function applySavedAddress(addr) {
+    setSelectedSavedAddress(addr.id);
+    setShipping(prev => ({
+      ...prev,
+      fullName:  addr.fullName  || prev.fullName,
+      phone:     addr.mobile    || prev.phone,
+      address:   addr.street    || prev.address,
+      city:      addr.city      || prev.city,
+      state:     addr.state     || prev.state,
+      pinCode:   addr.pincode   || prev.pinCode,
+    }));
+    setShippingErrors({});
+    showNotification("Address selected! You can still edit fields below.", "success");
+  }
 
   // ============================================================================
   // CALCULATIONS - CART SUMMARY
@@ -204,55 +244,48 @@ export default function Cart() {
     setLoading(true);
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      const orderId = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`.toUpperCase();
-      setOrderNumber(orderId);
-
-      const order = {
-        id: orderId,
-        buyerEmail: user?.email,
-        buyerName: user?.name,
-        items: cartItems.map(item => ({
-          id: item.id,
-          name: item.name,
-          price: item.price,
-          quantity: item.qty || item.quantity,
-          subtotal: (item.price * (item.qty || item.quantity)).toFixed(2)
-        })),
+      // ✅ Build order payload for backend
+      const orderPayload = {
+        userEmail: user?.email,
         shipping: {
-          ...shipping,
-          deliveryDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toLocaleDateString()
-        },
-        payment: {
-          method: "Online",
-          status: "Completed",
-          transactionId: `TXN-${Date.now()}`
-        },
-        summary,
-        couponApplied: couponApplied ? couponCode : null,
-        status: "placed",
-        createdAt: new Date().toISOString(),
-        estimatedDelivery: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toLocaleDateString()
+          fullName: shipping.fullName,
+          phone: shipping.phone,
+          address: shipping.address,
+          city: shipping.city,
+          state: shipping.state,
+          pinCode: shipping.pinCode,
+        }
       };
 
-      const orders = JSON.parse(localStorage.getItem("fc_orders") || "[]");
-      orders.push(order);
-      localStorage.setItem("fc_orders", JSON.stringify(orders));
+      const res = await fetch("http://localhost:8080/orders/place", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(orderPayload)
+      });
 
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to place order");
+      }
+
+      const order = await res.json();
+      const orderId = `ORD-${order.id}`;
+      setOrderNumber(orderId);
       setOrderPlaced(true);
       setStep(3);
       showNotification("Order placed successfully!", "success");
 
+      // Clear cart state
       setTimeout(() => {
         clearCart();
         setCouponCode("");
         setCouponApplied(false);
         setDiscountPercent(0);
       }, 1500);
+
     } catch (error) {
       console.error("Error placing order:", error);
-      showNotification("Failed to place order. Please try again.", "error");
+      showNotification(error.message || "Failed to place order. Please try again.", "error");
     } finally {
       setLoading(false);
     }
@@ -536,10 +569,82 @@ export default function Cart() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                 >
-                  <h2 className="text-2xl md:text-3xl font-bold text-gray-800 mb-8 flex items-center gap-2">
+                  <h2 className="text-2xl md:text-3xl font-bold text-gray-800 mb-6 flex items-center gap-2">
                     <FiMapPin size={28} className="text-indigo-600" />
                     Shipping Address
                   </h2>
+
+                  {/* ===== ADDRESS MODE TOGGLE ===== */}
+                  {savedAddresses.length > 0 && (
+                    <div className="mb-6">
+                      <div className="flex gap-3 mb-5">
+                        <button
+                          type="button"
+                          onClick={() => setAddressMode("saved")}
+                          className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl border-2 font-bold transition ${
+                            addressMode === "saved"
+                              ? "border-indigo-500 bg-indigo-50 text-indigo-700"
+                              : "border-gray-200 bg-white text-gray-600 hover:border-indigo-300"
+                          }`}
+                        >
+                          <FiHome size={18} />
+                          My Saved Addresses
+                          <span className="bg-indigo-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                            {savedAddresses.length}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setAddressMode("manual"); setSelectedSavedAddress(null); }}
+                          className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl border-2 font-bold transition ${
+                            addressMode === "manual"
+                              ? "border-indigo-500 bg-indigo-50 text-indigo-700"
+                              : "border-gray-200 bg-white text-gray-600 hover:border-indigo-300"
+                          }`}
+                        >
+                          <FiEdit3 size={18} />
+                          Enter New Address
+                        </button>
+                      </div>
+
+                      {/* Saved address cards */}
+                      {addressMode === "saved" && (
+                        <div className="space-y-3 mb-6">
+                          {savedAddresses.map((addr, i) => (
+                            <div
+                              key={addr.id || i}
+                              onClick={() => applySavedAddress(addr)}
+                              className={`cursor-pointer rounded-xl border-2 p-4 transition ${
+                                selectedSavedAddress === addr.id
+                                  ? "border-indigo-500 bg-indigo-50 shadow-md"
+                                  : "border-gray-200 bg-gray-50 hover:border-indigo-300 hover:bg-indigo-50/40"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between">
+                                <div>
+                                  <p className="font-bold text-gray-800">{addr.fullName}</p>
+                                  <p className="text-sm text-gray-600 mt-0.5">📞 {addr.mobile}</p>
+                                  <p className="text-sm text-gray-600 mt-1">{addr.street}, {addr.city}, {addr.state} — {addr.pincode}</p>
+                                </div>
+                                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-1 ${
+                                  selectedSavedAddress === addr.id
+                                    ? "border-indigo-500 bg-indigo-500"
+                                    : "border-gray-300"
+                                }`}>
+                                  {selectedSavedAddress === addr.id && <FiCheck size={14} className="text-white" />}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                          {selectedSavedAddress && (
+                            <p className="text-xs text-indigo-600 font-semibold text-center mt-2">
+                              ✅ Address auto-filled below. You can still edit any field.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                     {/* Full Name */}

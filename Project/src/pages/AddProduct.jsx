@@ -142,7 +142,12 @@ export default function AddProduct() {
   e.preventDefault();
 
   if (!validateForm()) {
-    setCurrentStep(1);
+    // Show an explicit error message next to the submit button
+    setErrors(prev => ({
+      ...prev,
+      submit: "Please fill all required fields correctly (scroll up to see errors)."
+    }));
+    window.scrollTo({ top: 0, behavior: "smooth" });
     return;
   }
 
